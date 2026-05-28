@@ -155,15 +155,15 @@
 
     <section id="dashboard" class="hidden flex-col gap-6">
       <!-- Segmento 1 -->
-      <section class="glass rounded-[2rem] p-5 md:p-6">
-        <div class="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <section class="glass rounded-[2rem] p-4 md:p-5">
+        <div class="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <p class="text-sm font-bold uppercase tracking-[.2em] text-sky-300">Segmento 1</p>
             <h2 class="text-2xl font-black text-white">Información General del Proyecto</h2>
           </div>
           <p id="lastFetch" class="text-xs text-slate-400"></p>
         </div>
-        <div id="generalCards" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"></div>
+        <div id="generalCards" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"></div>
       </section>
 
       <!-- Segmento 2 -->
@@ -376,24 +376,50 @@
       return null;
     }
 
+    function isThousandsGrouping(raw, separator) {
+      const clean = String(raw ?? '').replace(/^[+-]/, '');
+      const parts = clean.split(separator);
+      if (parts.length <= 1) return false;
+      return parts.slice(1).every(part => /^\d{3}$/.test(part)) && /^\d{1,3}$/.test(parts[0]);
+    }
+
     function parseNumber(value) {
       if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
       let raw = String(value ?? '').trim();
       if (!raw) return 0;
       const negative = /^\(.*\)$/.test(raw) || raw.startsWith('-');
-      raw = raw.replace(/[()$COPUSD%\s]/gi, '').replace(/−/g, '-');
+      raw = raw
+        .replace(/[()$]/g, '')
+        .replace(/\b(COP|USD|EUR|MXN|PEN|CLP|ARS)\b/gi, '')
+        .replace(/−/g, '-')
+        .replace(/\s+/g, '');
 
       const hasComma = raw.includes(',');
       const hasDot = raw.includes('.');
+
       if (hasComma && hasDot) {
         const lastComma = raw.lastIndexOf(',');
         const lastDot = raw.lastIndexOf('.');
-        raw = lastComma > lastDot ? raw.replace(/\./g, '').replace(',', '.') : raw.replace(/,/g, '');
+        if (lastDot > lastComma) {
+          raw = raw.replace(/,/g, '');
+        } else {
+          raw = raw.replace(/\./g, '').replace(',', '.');
+        }
       } else if (hasComma) {
-        raw = raw.replace(/\./g, '').replace(',', '.');
-      } else {
-        const pieces = raw.split('.');
-        if (pieces.length > 2) raw = raw.replace(/\./g, '');
+        if (isThousandsGrouping(raw, ',')) {
+          raw = raw.replace(/,/g, '');
+        } else if (/^-?\d+,\d{1,2}$/.test(raw)) {
+          raw = raw.replace(',', '.');
+        } else {
+          raw = raw.replace(/,/g, '');
+        }
+      } else if (hasDot) {
+        if (isThousandsGrouping(raw, '.')) {
+          raw = raw.replace(/\./g, '');
+        } else {
+          const pieces = raw.split('.');
+          if (pieces.length > 2) raw = raw.replace(/\./g, '');
+        }
       }
 
       const n = Number(raw.replace(/[^0-9.-]/g, ''));
@@ -449,19 +475,53 @@
       ['DICIEMBRE', 12], ['DIC', 12], ['DECEMBER', 12], ['DEC', 12]
     ]);
 
-    function parseDateSort(value) {
+    const MONTH_NAMES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+
+    function parseDateInfo(value) {
       const raw = String(value ?? '').trim();
-      if (!raw) return 0;
-      const asDate = Date.parse(raw.replace(/\./g, '/'));
-      if (!Number.isNaN(asDate)) return asDate;
+      if (!raw) return null;
+
+      const dmy = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+      if (dmy) {
+        const day = Number(dmy[1]);
+        const month = Number(dmy[2]);
+        const year = Number(dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3]);
+        return { day, month, year, timestamp: new Date(year, month - 1, day).getTime() };
+      }
+
       const n = normalize(raw);
       const yearMatch = n.match(/(20\d{2}|19\d{2})/);
       const year = yearMatch ? Number(yearMatch[1]) : new Date().getFullYear();
       for (const [name, month] of MONTHS.entries()) {
-        if (n.includes(name)) return new Date(year, month - 1, 1).getTime();
+        if (n.includes(name)) {
+          return { day: 1, month, year, timestamp: new Date(year, month - 1, 1).getTime() };
+        }
       }
-      const num = parseNumber(raw);
-      return num || 0;
+
+      if (/^\d{4}$/.test(raw)) {
+        const onlyYear = Number(raw);
+        return { day: 1, month: 1, year: onlyYear, timestamp: new Date(onlyYear, 0, 1).getTime() };
+      }
+
+      const asDate = Date.parse(raw.replace(/\./g, '/'));
+      if (!Number.isNaN(asDate)) {
+        const d = new Date(asDate);
+        return { day: d.getDate(), month: d.getMonth() + 1, year: d.getFullYear(), timestamp: asDate };
+      }
+
+      return null;
+    }
+
+    function parseDateSort(value) {
+      return parseDateInfo(value)?.timestamp || parseNumber(value) || 0;
+    }
+
+    function formatMonthYear(value) {
+      const raw = String(value ?? '').trim();
+      if (!raw) return '—';
+      const info = parseDateInfo(raw);
+      if (!info || !info.month || !info.year) return raw;
+      return `${MONTH_NAMES[info.month - 1]} ${info.year}`;
     }
 
     function showLoader(message = 'Consultando fuentes web publicadas en Google Sheets.') {
@@ -640,10 +700,14 @@
         { label: 'Líder', value: selected.lider, icon: '👤' }
       ];
       els.generalCards.innerHTML = cards.map(card => `
-        <article class="rounded-3xl border border-slate-700/70 bg-slate-950/45 p-4">
-          <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-400/10 text-xl">${card.icon}</div>
-          <p class="text-xs font-bold uppercase tracking-[.18em] text-slate-400">${escapeHtml(card.label)}</p>
-          <p class="mt-2 break-words text-lg font-black text-white">${escapeHtml(card.value || '—')}</p>
+        <article class="rounded-2xl border border-slate-700/70 bg-slate-950/45 p-3.5">
+          <div class="flex items-start gap-3">
+            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-sky-400/10 text-base">${card.icon}</div>
+            <div class="min-w-0 flex-1">
+              <p class="text-[11px] font-bold uppercase tracking-[.18em] text-slate-400">${escapeHtml(card.label)}</p>
+              <p class="mt-1 break-words text-sm font-black leading-5 text-white md:text-base">${escapeHtml(card.value || '—')}</p>
+            </div>
+          </div>
         </article>
       `).join('');
     }
@@ -730,13 +794,17 @@
      * SEGMENTO 2A: FINANCIERO ACTUAL
      **********************************************************************/
     function renderFinance(rows) {
-      const normalized = rows.map(row => ({
-        mes: getVal(row, ['MES', 'Mes', 'FECHA', 'Fecha'], '—'),
-        ingreso: parseNumber(getVal(row, ['INGRESO', 'Ingresos', 'TOTAL INGRESOS', 'Total Ingresos'], 0)),
-        costo: parseNumber(getVal(row, ['COSTO', 'Costos', 'TOTAL COSTO', 'Total Costo'], 0)),
-        rentabilidad: getVal(row, ['%', 'RENTABILIDAD', 'Rentabilidad', 'RENTA'], ''),
-        utilidad: parseNumber(getVal(row, ['UTILIDAD', 'Utilidad', 'Profit'], 0))
-      })).sort((a, b) => parseDateSort(a.mes) - parseDateSort(b.mes));
+      const normalized = rows.map(row => {
+        const mesRaw = getVal(row, ['MES', 'Mes', 'FECHA', 'Fecha'], '—');
+        return {
+          mes: mesRaw,
+          sortKey: parseDateSort(mesRaw),
+          ingreso: parseNumber(getVal(row, ['INGRESO', 'Ingresos', 'TOTAL INGRESOS', 'Total Ingresos'], 0)),
+          costo: parseNumber(getVal(row, ['COSTO', 'Costos', 'TOTAL COSTO', 'Total Costo'], 0)),
+          rentabilidad: getVal(row, ['%', 'RENTABILIDAD', 'Rentabilidad', 'RENTA'], ''),
+          utilidad: parseNumber(getVal(row, ['UTILIDAD', 'Utilidad', 'Profit'], 0))
+        };
+      }).sort((a, b) => a.sortKey - b.sortKey);
 
       els.financeCount.textContent = `${numberFormatter.format(normalized.length)} registros`;
       toggleEmpty(els.financeEmpty, els.financeContent, normalized.length === 0);
@@ -764,13 +832,17 @@
      * SEGMENTO 2B: HISTÓRICO
      **********************************************************************/
     function renderHistory(rows) {
-      const normalized = rows.map(row => ({
-        fecha: getVal(row, ['FECHA', 'Fecha', 'AÑO', 'ANIO', 'Año', 'Year'], '—'),
-        ingresos: parseNumber(getVal(row, ['TOTAL INGRESOS', 'Total Ingresos', 'INGRESO', 'Ingresos'], 0)),
-        costo: parseNumber(getVal(row, ['TOTAL COSTO', 'Total Costo', 'COSTO', 'Costos'], 0)),
-        utilidad: parseNumber(getVal(row, ['UTILIDAD', 'Utilidad', 'Profit'], 0)),
-        rentabilidad: getVal(row, ['RENTABILIDAD', 'Rentabilidad', '%', 'RENTA'], '')
-      })).sort((a, b) => parseDateSort(a.fecha) - parseDateSort(b.fecha));
+      const normalized = rows.map(row => {
+        const fechaRaw = getVal(row, ['FECHA', 'Fecha', 'AÑO', 'ANIO', 'Año', 'Year'], '—');
+        return {
+          fecha: formatMonthYear(fechaRaw),
+          sortKey: parseDateSort(fechaRaw),
+          ingresos: parseNumber(getVal(row, ['TOTAL INGRESOS', 'Total Ingresos', 'INGRESO', 'Ingresos'], 0)),
+          costo: parseNumber(getVal(row, ['TOTAL COSTO', 'Total Costo', 'COSTO', 'Costos'], 0)),
+          utilidad: parseNumber(getVal(row, ['UTILIDAD', 'Utilidad', 'Profit'], 0)),
+          rentabilidad: getVal(row, ['RENTABILIDAD', 'Rentabilidad', '%', 'RENTA'], '')
+        };
+      }).sort((a, b) => a.sortKey - b.sortKey);
 
       els.historyCount.textContent = `${numberFormatter.format(normalized.length)} registros`;
       toggleEmpty(els.historyEmpty, els.historyContent, normalized.length === 0);
@@ -927,8 +999,8 @@
           idx,
           source: row,
           active: isActivePerson(row),
-          name: getVal(row, ['Nombre Completo', 'NOMBRE COMPLETO', 'Nombre', 'NOMBRE', 'Empleado', 'EMPLEADO', 'Colaborador', 'COLABORADOR', 'Full Name'], 'Sin nombre'),
-          cargo: getVal(row, ['Cargo', 'CARGO', 'Puesto', 'Perfil', 'Rol'], '—'),
+          name: getVal(row, ['ClientName', 'CLIENTNAME', 'Nombre Completo', 'NOMBRE COMPLETO', 'Nombre', 'NOMBRE', 'Empleado', 'EMPLEADO', 'Colaborador', 'COLABORADOR', 'Full Name'], 'Sin nombre'),
+          cargo: getVal(row, ['PlaceName', 'PLACENAME', 'Cargo', 'CARGO', 'Puesto', 'Perfil', 'Rol'], '—'),
           ciudad: getVal(row, ['Ciudad', 'CIUDAD', 'City', 'Sede'], '—'),
           salary,
           rodamiento,
@@ -1093,12 +1165,15 @@
     }
 
     function sortCompare(a, b, dir) {
+      const aDate = parseDateInfo(a);
+      const bDate = parseDateInfo(b);
       const na = parseNumber(a);
       const nb = parseNumber(b);
       const aIsNum = !isBlank(a) && Number.isFinite(na) && String(a).match(/[0-9]/);
       const bIsNum = !isBlank(b) && Number.isFinite(nb) && String(b).match(/[0-9]/);
       let result;
-      if (aIsNum && bIsNum) result = na - nb;
+      if (aDate && bDate) result = aDate.timestamp - bDate.timestamp;
+      else if (aIsNum && bIsNum) result = na - nb;
       else result = String(a ?? '').localeCompare(String(b ?? ''), 'es', { numeric: true, sensitivity: 'base' });
       return dir === 'desc' ? -result : result;
     }
