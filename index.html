@@ -1,0 +1,1172 @@
+<!doctype html>
+<html lang="es" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard BI | Operaciones, Finanzas y Talento</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'Roboto', 'Arial'] },
+          boxShadow: {
+            glow: '0 0 0 1px rgba(255,255,255,.08), 0 18px 55px rgba(0,0,0,.35)'
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- PapaParse + Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07111f;
+      --panel: rgba(15, 23, 42, .82);
+      --panel-soft: rgba(30, 41, 59, .68);
+      --border: rgba(148, 163, 184, .18);
+      --muted: #94a3b8;
+      --text: #e5e7eb;
+      --accent: #38bdf8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 15% 5%, rgba(56, 189, 248, .18), transparent 28rem),
+        radial-gradient(circle at 85% 12%, rgba(168, 85, 247, .16), transparent 32rem),
+        linear-gradient(135deg, #020617 0%, #07111f 44%, #0f172a 100%);
+      color: var(--text);
+    }
+
+    .glass {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .28);
+      backdrop-filter: blur(16px);
+    }
+
+    .glass-soft {
+      background: var(--panel-soft);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+    }
+
+    .text-gradient {
+      background: linear-gradient(90deg, #e0f2fe, #7dd3fc, #c4b5fd);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .thin-scrollbar::-webkit-scrollbar { width: 9px; height: 9px; }
+    .thin-scrollbar::-webkit-scrollbar-track { background: rgba(15, 23, 42, .4); border-radius: 999px; }
+    .thin-scrollbar::-webkit-scrollbar-thumb { background: rgba(100, 116, 139, .72); border-radius: 999px; }
+    .thin-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, .88); }
+
+    .loader {
+      width: 44px;
+      height: 44px;
+      border: 4px solid rgba(148, 163, 184, .24);
+      border-top-color: #38bdf8;
+      border-radius: 999px;
+      animation: spin .8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .sort-indicator::after {
+      content: '↕';
+      margin-left: .45rem;
+      color: #64748b;
+      font-size: .75rem;
+    }
+
+    th[data-sort-dir="asc"]::after { content: '↑'; color: #38bdf8; }
+    th[data-sort-dir="desc"]::after { content: '↓'; color: #38bdf8; }
+
+    .chart-box { min-height: 300px; }
+
+    @media print {
+      body { background: #fff; color: #111827; }
+      .glass, .glass-soft { background: #fff; border-color: #e5e7eb; box-shadow: none; backdrop-filter: none; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+
+<body class="font-sans antialiased">
+  <div id="globalLoader" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/75 backdrop-blur-sm">
+    <div class="glass rounded-3xl px-8 py-7 text-center">
+      <div class="loader mx-auto mb-4"></div>
+      <p class="text-lg font-semibold">Cargando datos...</p>
+      <p id="loaderMessage" class="mt-1 text-sm text-slate-400">Consultando fuentes web publicadas en Google Sheets.</p>
+    </div>
+  </div>
+
+  <main class="mx-auto flex w-full max-w-[1500px] flex-col gap-6 px-4 py-6 md:px-8 lg:px-10">
+    <header class="glass sticky top-4 z-40 rounded-[2rem] p-4 md:p-5">
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div class="min-w-0">
+          <div class="mb-2 inline-flex items-center gap-2 rounded-full border border-sky-400/25 bg-sky-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[.22em] text-sky-200">
+            BI en vivo · Google Sheets CSV
+          </div>
+          <h1 class="text-2xl font-black tracking-tight text-gradient md:text-4xl">Dashboard Ejecutivo de Proyecto</h1>
+          <p class="mt-1 max-w-3xl text-sm text-slate-400 md:text-base">
+            Consulta dinámica de distribución, clientes, cartera, provisiones, histórico y personal sin datos quemados en el código.
+          </p>
+        </div>
+
+        <div class="w-full lg:max-w-xl">
+          <label for="projectSearch" class="mb-2 block text-sm font-semibold text-slate-200">Buscar proyecto / cliente</label>
+          <div class="relative">
+            <input id="projectSearch" type="search" autocomplete="off" spellcheck="false"
+              placeholder="Escribe ProjectId, nombre, palabra clave o número..."
+              class="w-full rounded-2xl border border-slate-700/80 bg-slate-950/70 px-4 py-3 pr-24 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-sky-400 focus:ring-4 focus:ring-sky-400/10" />
+            <button id="refreshBtn" type="button"
+              class="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl bg-sky-500/15 px-3 py-2 text-xs font-bold text-sky-200 transition hover:bg-sky-500/25">
+              Actualizar
+            </button>
+            <div id="suggestions" class="thin-scrollbar absolute left-0 right-0 top-[calc(100%+.5rem)] z-50 hidden max-h-96 overflow-auto rounded-2xl border border-slate-700 bg-slate-950/95 p-2 shadow-2xl"></div>
+          </div>
+          <div class="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <span id="distributionStatus" class="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1">Distribución: sin cargar</span>
+            <span id="selectedStatus" class="rounded-full border border-slate-700 bg-slate-900/80 px-3 py-1">Proyecto: sin seleccionar</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section id="welcomeState" class="glass rounded-[2rem] p-8 text-center md:p-12">
+      <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-sky-400/10 text-3xl">🔎</div>
+      <h2 class="text-2xl font-black text-slate-100">Selecciona un proyecto para iniciar el análisis</h2>
+      <p class="mx-auto mt-2 max-w-2xl text-slate-400">
+        El sistema precarga la hoja <strong>DISTRIBUCION</strong>. Al elegir una coincidencia, consulta en línea CLIENTES, CARTERA, PROVISION, HISTORICO y PERSONAL.
+      </p>
+    </section>
+
+    <section id="dashboard" class="hidden flex-col gap-6">
+      <!-- Segmento 1 -->
+      <section class="glass rounded-[2rem] p-5 md:p-6">
+        <div class="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p class="text-sm font-bold uppercase tracking-[.2em] text-sky-300">Segmento 1</p>
+            <h2 class="text-2xl font-black text-white">Información General del Proyecto</h2>
+          </div>
+          <p id="lastFetch" class="text-xs text-slate-400"></p>
+        </div>
+        <div id="generalCards" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"></div>
+      </section>
+
+      <!-- Segmento 2 -->
+      <section class="grid gap-6 xl:grid-cols-2">
+        <article class="glass rounded-[2rem] p-5 md:p-6">
+          <div class="mb-5 flex items-start justify-between gap-3">
+            <div>
+              <p class="text-sm font-bold uppercase tracking-[.2em] text-emerald-300">Segmento 2A</p>
+              <h2 class="text-2xl font-black text-white">Evolución Mes a Mes Actual</h2>
+            </div>
+            <span id="financeCount" class="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-200">0 registros</span>
+          </div>
+          <div id="financeEmpty" class="hidden rounded-2xl border border-slate-700 bg-slate-900/50 p-5 text-slate-400">No hay registros financieros actuales para este proyecto.</div>
+          <div id="financeContent" class="space-y-5">
+            <div class="chart-box rounded-2xl border border-slate-700/70 bg-slate-950/45 p-4">
+              <canvas id="financeChart"></canvas>
+            </div>
+            <div id="financeTable" class="thin-scrollbar overflow-auto"></div>
+          </div>
+        </article>
+
+        <article class="glass rounded-[2rem] p-5 md:p-6">
+          <div class="mb-5 flex items-start justify-between gap-3">
+            <div>
+              <p class="text-sm font-bold uppercase tracking-[.2em] text-violet-300">Segmento 2B</p>
+              <h2 class="text-2xl font-black text-white">Histórico de Años Anteriores</h2>
+            </div>
+            <span id="historyCount" class="rounded-full bg-violet-400/10 px-3 py-1 text-xs font-bold text-violet-200">0 registros</span>
+          </div>
+          <div id="historyEmpty" class="hidden rounded-2xl border border-slate-700 bg-slate-900/50 p-5 text-slate-400">No hay histórico disponible para este proyecto.</div>
+          <div id="historyContent" class="space-y-5">
+            <div class="chart-box rounded-2xl border border-slate-700/70 bg-slate-950/45 p-4">
+              <canvas id="historyChart"></canvas>
+            </div>
+            <div id="historyTable" class="thin-scrollbar overflow-auto"></div>
+          </div>
+        </article>
+      </section>
+
+      <!-- Segmento 3 -->
+      <section class="glass rounded-[2rem] p-5 md:p-6">
+        <div class="mb-5">
+          <p class="text-sm font-bold uppercase tracking-[.2em] text-amber-300">Segmento 3</p>
+          <h2 class="text-2xl font-black text-white">Análisis de Cartera y Provisiones</h2>
+          <p class="mt-1 text-sm text-slate-400">Mapa de calor por antigüedad de saldos y estado de provisiones.</p>
+        </div>
+        <div class="grid gap-6 xl:grid-cols-2">
+          <article class="glass-soft rounded-3xl p-5">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <h3 class="text-lg font-black text-white">Cartera acumulada</h3>
+              <span id="carteraTotal" class="rounded-full bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-200">$0</span>
+            </div>
+            <div id="carteraEmpty" class="hidden rounded-2xl border border-slate-700 bg-slate-950/40 p-5 text-slate-400">Sin cartera pendiente.</div>
+            <div id="carteraBars" class="space-y-3"></div>
+          </article>
+
+          <article class="glass-soft rounded-3xl p-5">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <h3 class="text-lg font-black text-white">Provisiones por edades</h3>
+              <span id="provisionTotal" class="rounded-full bg-rose-400/10 px-3 py-1 text-xs font-bold text-rose-200">$0</span>
+            </div>
+            <div id="provisionEmpty" class="hidden rounded-2xl border border-slate-700 bg-slate-950/40 p-5 text-slate-400">Sin provisiones registradas.</div>
+            <div id="provisionBars" class="space-y-3"></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- Segmento 4 -->
+      <section class="glass rounded-[2rem] p-5 md:p-6">
+        <div class="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <p class="text-sm font-bold uppercase tracking-[.2em] text-cyan-300">Segmento 4</p>
+            <h2 class="text-2xl font-black text-white">Gestión de Talento y Costos Operativos</h2>
+            <p class="mt-1 text-sm text-slate-400">Costos de nómina, personal asignado y alertas SST / restricciones médicas.</p>
+          </div>
+          <div class="grid min-w-full gap-3 sm:grid-cols-2 xl:min-w-[460px]">
+            <div class="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
+              <p class="text-xs font-bold uppercase tracking-[.18em] text-cyan-200">Personas activas</p>
+              <p id="peopleKpi" class="mt-1 text-3xl font-black text-white">0</p>
+            </div>
+            <div class="rounded-2xl border border-indigo-400/20 bg-indigo-400/10 p-4">
+              <p class="text-xs font-bold uppercase tracking-[.18em] text-indigo-200">Costo nómina total</p>
+              <p id="payrollKpi" class="mt-1 text-3xl font-black text-white">$0</p>
+            </div>
+          </div>
+        </div>
+        <div id="personalEmpty" class="hidden rounded-2xl border border-slate-700 bg-slate-900/50 p-5 text-slate-400">No hay personal asignado para este proyecto.</div>
+        <div id="personalTable" class="thin-scrollbar overflow-auto"></div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    /**********************************************************************
+     * CONFIGURACIÓN DE FUENTES
+     **********************************************************************/
+    const CSV_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRMDQlR34QrdHDkaMZ3i0J5TTkg3xeWrUeYKQVOTA4bBY0fUQJrduttmJhhj-HyRg/pub?output=csv&gid=';
+
+    const SHEETS = Object.freeze({
+      DISTRIBUCION: { gid: '578489433', label: 'DISTRIBUCION' },
+      CLIENTES:     { gid: '1286804077', label: 'CLIENTES' },
+      CARTERA:      { gid: '1780883619', label: 'CARTERA' },
+      PROVISION:    { gid: '1294455164', label: 'PROVISION' },
+      HISTORICO:    { gid: '175674593', label: 'HISTORICO' },
+      PERSONAL:     { gid: '1314111792', label: 'PERSONAL' }
+    });
+
+    /**********************************************************************
+     * ESTADO GLOBAL
+     **********************************************************************/
+    const state = {
+      distribution: [],
+      selectedProject: null,
+      activeSuggestion: -1,
+      activeController: null,
+      charts: { finance: null, history: null },
+      sortState: new Map()
+    };
+
+    /**********************************************************************
+     * SELECTORES
+     **********************************************************************/
+    const $ = (selector) => document.querySelector(selector);
+    const els = {
+      loader: $('#globalLoader'),
+      loaderMessage: $('#loaderMessage'),
+      search: $('#projectSearch'),
+      suggestions: $('#suggestions'),
+      refreshBtn: $('#refreshBtn'),
+      distributionStatus: $('#distributionStatus'),
+      selectedStatus: $('#selectedStatus'),
+      welcome: $('#welcomeState'),
+      dashboard: $('#dashboard'),
+      generalCards: $('#generalCards'),
+      lastFetch: $('#lastFetch'),
+      financeCount: $('#financeCount'),
+      financeEmpty: $('#financeEmpty'),
+      financeContent: $('#financeContent'),
+      financeTable: $('#financeTable'),
+      historyCount: $('#historyCount'),
+      historyEmpty: $('#historyEmpty'),
+      historyContent: $('#historyContent'),
+      historyTable: $('#historyTable'),
+      carteraTotal: $('#carteraTotal'),
+      carteraEmpty: $('#carteraEmpty'),
+      carteraBars: $('#carteraBars'),
+      provisionTotal: $('#provisionTotal'),
+      provisionEmpty: $('#provisionEmpty'),
+      provisionBars: $('#provisionBars'),
+      peopleKpi: $('#peopleKpi'),
+      payrollKpi: $('#payrollKpi'),
+      personalEmpty: $('#personalEmpty'),
+      personalTable: $('#personalTable')
+    };
+
+    /**********************************************************************
+     * UTILIDADES DE NORMALIZACIÓN Y FORMATO
+     **********************************************************************/
+    const escapeHtml = (value) => String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+
+    const normalize = (value) => String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[\s_\-\/\\.]+/g, ' ')
+      .replace(/[^a-zA-Z0-9% ]/g, '')
+      .trim()
+      .toUpperCase();
+
+    const isBlank = (value) => value === null || value === undefined || String(value).trim() === '';
+
+    function isMeaningful(value) {
+      const raw = String(value ?? '').trim();
+      const n = normalize(raw);
+      if (!raw) return false;
+      return !['NO', 'N', 'NA', 'N A', 'N/A', 'NINGUNO', 'NINGUNA', 'SIN', 'SIN DATO', 'SIN DATOS', 'NO APLICA', 'NULL', '0', '-', '--'].includes(n);
+    }
+
+    function headerLookup(row) {
+      const map = new Map();
+      Object.keys(row || {}).forEach(key => map.set(normalize(key), key));
+      return map;
+    }
+
+    function getVal(row, aliases, fallback = '') {
+      if (!row) return fallback;
+      const map = headerLookup(row);
+      for (const alias of aliases) {
+        const exact = map.get(normalize(alias));
+        if (exact !== undefined && !isBlank(row[exact])) return row[exact];
+      }
+      for (const alias of aliases) {
+        const normAlias = normalize(alias);
+        const partial = [...map.entries()].find(([normKey]) => normKey.includes(normAlias) || normAlias.includes(normKey));
+        if (partial && !isBlank(row[partial[1]])) return row[partial[1]];
+      }
+      return fallback;
+    }
+
+    function getFirstExistingKey(row, aliases) {
+      const map = headerLookup(row);
+      for (const alias of aliases) {
+        const key = map.get(normalize(alias));
+        if (key !== undefined) return key;
+      }
+      return null;
+    }
+
+    function parseNumber(value) {
+      if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+      let raw = String(value ?? '').trim();
+      if (!raw) return 0;
+      const negative = /^\(.*\)$/.test(raw) || raw.startsWith('-');
+      raw = raw.replace(/[()$COPUSD%\s]/gi, '').replace(/−/g, '-');
+
+      const hasComma = raw.includes(',');
+      const hasDot = raw.includes('.');
+      if (hasComma && hasDot) {
+        const lastComma = raw.lastIndexOf(',');
+        const lastDot = raw.lastIndexOf('.');
+        raw = lastComma > lastDot ? raw.replace(/\./g, '').replace(',', '.') : raw.replace(/,/g, '');
+      } else if (hasComma) {
+        raw = raw.replace(/\./g, '').replace(',', '.');
+      } else {
+        const pieces = raw.split('.');
+        if (pieces.length > 2) raw = raw.replace(/\./g, '');
+      }
+
+      const n = Number(raw.replace(/[^0-9.-]/g, ''));
+      if (!Number.isFinite(n)) return 0;
+      return negative && n > 0 ? -n : n;
+    }
+
+    function parsePercent(value) {
+      if (isBlank(value)) return null;
+      const n = parseNumber(value);
+      if (!Number.isFinite(n)) return null;
+      return Math.abs(n) <= 1 ? n * 100 : n;
+    }
+
+    const moneyFormatter = new Intl.NumberFormat('es-CO', {
+      style: 'currency',
+      currency: 'COP',
+      maximumFractionDigits: 0
+    });
+
+    const numberFormatter = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 });
+
+    function formatMoney(value) {
+      return moneyFormatter.format(parseNumber(value));
+    }
+
+    function formatPercent(value) {
+      const p = parsePercent(value);
+      return p === null ? '—' : `${p.toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+    }
+
+    function compactMoney(value) {
+      const n = parseNumber(value);
+      const abs = Math.abs(n);
+      if (abs >= 1_000_000_000) return `$${(n / 1_000_000_000).toLocaleString('es-CO', { maximumFractionDigits: 1 })}B`;
+      if (abs >= 1_000_000) return `$${(n / 1_000_000).toLocaleString('es-CO', { maximumFractionDigits: 1 })}M`;
+      if (abs >= 1_000) return `$${(n / 1_000).toLocaleString('es-CO', { maximumFractionDigits: 1 })}K`;
+      return formatMoney(n);
+    }
+
+    const MONTHS = new Map([
+      ['ENERO', 1], ['ENE', 1], ['JANUARY', 1], ['JAN', 1],
+      ['FEBRERO', 2], ['FEB', 2], ['FEBRUARY', 2],
+      ['MARZO', 3], ['MAR', 3], ['MARCH', 3],
+      ['ABRIL', 4], ['ABR', 4], ['APRIL', 4], ['APR', 4],
+      ['MAYO', 5], ['MAY', 5],
+      ['JUNIO', 6], ['JUN', 6], ['JUNE', 6],
+      ['JULIO', 7], ['JUL', 7], ['JULY', 7],
+      ['AGOSTO', 8], ['AGO', 8], ['AUGUST', 8], ['AUG', 8],
+      ['SEPTIEMBRE', 9], ['SETIEMBRE', 9], ['SEP', 9], ['SEPT', 9], ['SEPTEMBER', 9],
+      ['OCTUBRE', 10], ['OCT', 10], ['OCTOBER', 10],
+      ['NOVIEMBRE', 11], ['NOV', 11], ['NOVEMBER', 11],
+      ['DICIEMBRE', 12], ['DIC', 12], ['DECEMBER', 12], ['DEC', 12]
+    ]);
+
+    function parseDateSort(value) {
+      const raw = String(value ?? '').trim();
+      if (!raw) return 0;
+      const asDate = Date.parse(raw.replace(/\./g, '/'));
+      if (!Number.isNaN(asDate)) return asDate;
+      const n = normalize(raw);
+      const yearMatch = n.match(/(20\d{2}|19\d{2})/);
+      const year = yearMatch ? Number(yearMatch[1]) : new Date().getFullYear();
+      for (const [name, month] of MONTHS.entries()) {
+        if (n.includes(name)) return new Date(year, month - 1, 1).getTime();
+      }
+      const num = parseNumber(raw);
+      return num || 0;
+    }
+
+    function showLoader(message = 'Consultando fuentes web publicadas en Google Sheets.') {
+      els.loaderMessage.textContent = message;
+      els.loader.classList.remove('hidden');
+      els.loader.classList.add('flex');
+    }
+
+    function hideLoader() {
+      els.loader.classList.add('hidden');
+      els.loader.classList.remove('flex');
+    }
+
+    function setStatus(el, text, tone = 'neutral') {
+      const tones = {
+        neutral: 'border-slate-700 bg-slate-900/80 text-slate-400',
+        ok: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200',
+        warn: 'border-amber-400/25 bg-amber-400/10 text-amber-200',
+        error: 'border-rose-400/25 bg-rose-400/10 text-rose-200'
+      };
+      el.className = `rounded-full px-3 py-1 ${tones[tone] || tones.neutral}`;
+      el.textContent = text;
+    }
+
+    /**********************************************************************
+     * FETCH Y PARSEO CSV
+     **********************************************************************/
+    async function fetchSheet(sheetKey, { signal } = {}) {
+      const sheet = SHEETS[sheetKey];
+      const url = `${CSV_BASE}${sheet.gid}&cacheBust=${Date.now()}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        cache: 'no-store',
+        mode: 'cors',
+        signal
+      });
+      if (!response.ok) throw new Error(`${sheet.label}: HTTP ${response.status}`);
+      const csv = await response.text();
+      return new Promise((resolve, reject) => {
+        Papa.parse(csv, {
+          header: true,
+          skipEmptyLines: 'greedy',
+          transformHeader: h => String(h ?? '').trim(),
+          complete: result => {
+            if (result.errors?.length) {
+              console.warn(`Advertencias de parseo en ${sheet.label}`, result.errors);
+            }
+            const rows = (result.data || []).filter(row => Object.values(row).some(v => !isBlank(v)));
+            resolve(rows);
+          },
+          error: reject
+        });
+      });
+    }
+
+    /**********************************************************************
+     * BÚSQUEDA Y SELECCIÓN
+     **********************************************************************/
+    async function loadDistribution() {
+      showLoader('Precargando hoja DISTRIBUCION...');
+      setStatus(els.distributionStatus, 'Distribución: cargando', 'warn');
+      try {
+        state.distribution = await fetchSheet('DISTRIBUCION');
+        setStatus(els.distributionStatus, `Distribución: ${numberFormatter.format(state.distribution.length)} registros`, 'ok');
+        renderSuggestions(els.search.value);
+      } catch (err) {
+        console.error(err);
+        setStatus(els.distributionStatus, 'Distribución: error al cargar', 'error');
+        els.suggestions.innerHTML = `<div class="p-4 text-sm text-rose-200">No fue posible cargar DISTRIBUCION. Revisa que la publicación CSV esté activa.</div>`;
+        els.suggestions.classList.remove('hidden');
+      } finally {
+        hideLoader();
+      }
+    }
+
+    function distributionIndex(row) {
+      const projectId = getVal(row, ['ProjectId', 'PROJECT ID', 'ID Proyecto', 'ID PROYECTO']);
+      const projectName = getVal(row, ['ProjectName', 'PROJECT NAME', 'Nombre Proyecto', 'NOMBRE PROYECTO', 'PROYECTO']);
+      return normalize(`${projectId} ${projectName}`);
+    }
+
+    function getDistributionSummary(row) {
+      return {
+        id: getVal(row, ['ProjectId', 'PROJECT ID', 'ID Proyecto', 'ID PROYECTO'], 'Sin ID'),
+        name: getVal(row, ['ProjectName', 'PROJECT NAME', 'Nombre Proyecto', 'NOMBRE PROYECTO', 'PROYECTO'], 'Proyecto sin nombre'),
+        line: getVal(row, ['LINEA', 'LÍNEA', 'Linea'], '—'),
+        director: getVal(row, ['DIRECTOR', 'Director'], '—'),
+        jefe: getVal(row, ['JEFE', 'Jefe'], '—'),
+        lider: getVal(row, ['LIDER', 'LÍDER', 'Lider'], '—')
+      };
+    }
+
+    function renderSuggestions(query) {
+      const q = normalize(query);
+      state.activeSuggestion = -1;
+      if (!q || q.length < 1) {
+        els.suggestions.classList.add('hidden');
+        els.suggestions.innerHTML = '';
+        return;
+      }
+
+      const terms = q.split(' ').filter(Boolean);
+      const matches = state.distribution
+        .map((row, idx) => ({ row, idx, index: distributionIndex(row) }))
+        .filter(item => terms.every(term => item.index.includes(term)))
+        .slice(0, 18);
+
+      if (!matches.length) {
+        els.suggestions.innerHTML = `<div class="p-4 text-sm text-slate-400">Sin coincidencias para <strong>${escapeHtml(query)}</strong>.</div>`;
+        els.suggestions.classList.remove('hidden');
+        return;
+      }
+
+      els.suggestions.innerHTML = matches.map((item, localIndex) => {
+        const s = getDistributionSummary(item.row);
+        return `
+          <button type="button" data-idx="${item.idx}" data-local-idx="${localIndex}"
+            class="suggestion-item block w-full rounded-xl px-3 py-3 text-left transition hover:bg-sky-400/10 focus:bg-sky-400/10 focus:outline-none">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-black text-slate-100">${escapeHtml(s.name)}</p>
+                <p class="mt-1 text-xs text-slate-400">ProjectId: <span class="font-bold text-sky-200">${escapeHtml(s.id)}</span></p>
+              </div>
+              <span class="shrink-0 rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-300">${escapeHtml(s.line)}</span>
+            </div>
+          </button>`;
+      }).join('');
+      els.suggestions.classList.remove('hidden');
+    }
+
+    function setActiveSuggestion(nextIndex) {
+      const items = [...document.querySelectorAll('.suggestion-item')];
+      if (!items.length) return;
+      state.activeSuggestion = (nextIndex + items.length) % items.length;
+      items.forEach((btn, idx) => {
+        btn.classList.toggle('bg-sky-400/15', idx === state.activeSuggestion);
+        if (idx === state.activeSuggestion) btn.scrollIntoView({ block: 'nearest' });
+      });
+    }
+
+    function findProjectMatches(rows, selected, aliasList) {
+      const projectId = normalize(selected.id);
+      const projectName = normalize(selected.name);
+      return rows.filter(row => {
+        const primary = normalize(getVal(row, aliasList, ''));
+        const joined = normalize(Object.values(row).join(' '));
+        if (!primary && !joined) return false;
+        return primary === projectId || primary.includes(projectId) ||
+               (projectName && primary === projectName) || (projectName && primary.includes(projectName)) ||
+               joined.includes(projectId);
+      });
+    }
+
+    async function selectProject(row) {
+      const selected = getDistributionSummary(row);
+      state.selectedProject = { ...selected, sourceRow: row };
+      els.search.value = `${selected.id} · ${selected.name}`;
+      els.suggestions.classList.add('hidden');
+      els.welcome.classList.add('hidden');
+      els.dashboard.classList.remove('hidden');
+      els.dashboard.classList.add('flex');
+      setStatus(els.selectedStatus, `Proyecto: ${selected.id}`, 'ok');
+      renderGeneralCards(selected);
+      await loadProjectSegments(selected);
+    }
+
+    /**********************************************************************
+     * SEGMENTO 1
+     **********************************************************************/
+    function renderGeneralCards(selected) {
+      const cards = [
+        { label: 'Línea', value: selected.line, icon: '🏷️' },
+        { label: 'Proyecto', value: selected.name, icon: '📌' },
+        { label: 'Director asignado', value: selected.director, icon: '🧭' },
+        { label: 'Jefe', value: selected.jefe, icon: '🧩' },
+        { label: 'Líder', value: selected.lider, icon: '👤' }
+      ];
+      els.generalCards.innerHTML = cards.map(card => `
+        <article class="rounded-3xl border border-slate-700/70 bg-slate-950/45 p-4">
+          <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-400/10 text-xl">${card.icon}</div>
+          <p class="text-xs font-bold uppercase tracking-[.18em] text-slate-400">${escapeHtml(card.label)}</p>
+          <p class="mt-2 break-words text-lg font-black text-white">${escapeHtml(card.value || '—')}</p>
+        </article>
+      `).join('');
+    }
+
+    /**********************************************************************
+     * CARGA DE SEGMENTOS
+     **********************************************************************/
+    async function loadProjectSegments(selected) {
+      if (state.activeController) state.activeController.abort();
+      state.activeController = new AbortController();
+      const { signal } = state.activeController;
+      showLoader(`Consultando fuentes web para ${selected.id}...`);
+
+      resetSegmentsBeforeLoad();
+
+      try {
+        const [clientes, cartera, provision, historico, personal] = await Promise.all([
+          fetchSheet('CLIENTES', { signal }),
+          fetchSheet('CARTERA', { signal }),
+          fetchSheet('PROVISION', { signal }),
+          fetchSheet('HISTORICO', { signal }),
+          fetchSheet('PERSONAL', { signal })
+        ]);
+
+        const currentRows = findProjectMatches(clientes, selected, [
+          'PROYECTO / NOMBRE CLIENTE', 'PROYECTO', 'Proyecto', 'ProjectId', 'PROJECT ID', 'ID Proyecto', 'NOMBRE CLIENTE'
+        ]);
+        const historyRows = findProjectMatches(historico, selected, [
+          'PROJECT ID', 'ProjectId', 'PROYECTO', 'Proyecto', 'ID Proyecto'
+        ]);
+        const carteraRows = findProjectMatches(cartera, selected, [
+          'Proyecto', 'PROYECTO', 'ProjectId', 'PROJECT ID', 'ID Proyecto'
+        ]);
+        const provisionRows = findProjectMatches(provision, selected, [
+          'Proyecto', 'PROYECTO', 'ProjectId', 'PROJECT ID', 'ID Proyecto'
+        ]);
+        const personalRows = findProjectMatches(personal, selected, [
+          'ProjectId', 'PROJECT ID', 'Proyecto', 'PROYECTO', 'ID Proyecto'
+        ]);
+
+        renderFinance(currentRows);
+        renderHistory(historyRows);
+        renderRisk(carteraRows, provisionRows);
+        renderPersonal(personalRows);
+
+        els.lastFetch.textContent = `Última consulta web: ${new Date().toLocaleString('es-CO')}`;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.error(err);
+        renderFetchError(err);
+      } finally {
+        hideLoader();
+      }
+    }
+
+    function resetSegmentsBeforeLoad() {
+      els.financeTable.innerHTML = '';
+      els.historyTable.innerHTML = '';
+      els.carteraBars.innerHTML = '';
+      els.provisionBars.innerHTML = '';
+      els.personalTable.innerHTML = '';
+      setText(els.peopleKpi, '0');
+      setText(els.payrollKpi, '$0');
+      destroyChart('finance');
+      destroyChart('history');
+    }
+
+    function renderFetchError(err) {
+      const message = `
+        <div class="rounded-2xl border border-rose-400/25 bg-rose-400/10 p-5 text-rose-100">
+          <p class="font-black">No fue posible consultar una o más fuentes web.</p>
+          <p class="mt-1 text-sm text-rose-200/90">${escapeHtml(err.message || 'Error desconocido')}.</p>
+        </div>`;
+      els.financeContent.innerHTML = message;
+      els.historyContent.innerHTML = message;
+      els.carteraBars.innerHTML = message;
+      els.provisionBars.innerHTML = message;
+      els.personalTable.innerHTML = message;
+    }
+
+    function setText(el, text) { el.textContent = text; }
+
+    /**********************************************************************
+     * SEGMENTO 2A: FINANCIERO ACTUAL
+     **********************************************************************/
+    function renderFinance(rows) {
+      const normalized = rows.map(row => ({
+        mes: getVal(row, ['MES', 'Mes', 'FECHA', 'Fecha'], '—'),
+        ingreso: parseNumber(getVal(row, ['INGRESO', 'Ingresos', 'TOTAL INGRESOS', 'Total Ingresos'], 0)),
+        costo: parseNumber(getVal(row, ['COSTO', 'Costos', 'TOTAL COSTO', 'Total Costo'], 0)),
+        rentabilidad: getVal(row, ['%', 'RENTABILIDAD', 'Rentabilidad', 'RENTA'], ''),
+        utilidad: parseNumber(getVal(row, ['UTILIDAD', 'Utilidad', 'Profit'], 0))
+      })).sort((a, b) => parseDateSort(a.mes) - parseDateSort(b.mes));
+
+      els.financeCount.textContent = `${numberFormatter.format(normalized.length)} registros`;
+      toggleEmpty(els.financeEmpty, els.financeContent, normalized.length === 0);
+      if (!normalized.length) return;
+
+      renderLineChart('finance', 'financeChart', {
+        labels: normalized.map(r => r.mes),
+        datasets: [
+          { label: 'Ingreso', data: normalized.map(r => r.ingreso), tension: .35 },
+          { label: 'Costo', data: normalized.map(r => r.costo), tension: .35 },
+          { label: 'Utilidad', data: normalized.map(r => r.utilidad), tension: .35 }
+        ]
+      });
+
+      renderTable(els.financeTable, 'financeTableGrid', [
+        { key: 'mes', label: 'MES', type: 'text' },
+        { key: 'ingreso', label: 'INGRESO', type: 'money' },
+        { key: 'costo', label: 'COSTO', type: 'money' },
+        { key: 'rentabilidad', label: '% Rentabilidad', type: 'percent' },
+        { key: 'utilidad', label: 'UTILIDAD', type: 'money' }
+      ], normalized);
+    }
+
+    /**********************************************************************
+     * SEGMENTO 2B: HISTÓRICO
+     **********************************************************************/
+    function renderHistory(rows) {
+      const normalized = rows.map(row => ({
+        fecha: getVal(row, ['FECHA', 'Fecha', 'AÑO', 'ANIO', 'Año', 'Year'], '—'),
+        ingresos: parseNumber(getVal(row, ['TOTAL INGRESOS', 'Total Ingresos', 'INGRESO', 'Ingresos'], 0)),
+        costo: parseNumber(getVal(row, ['TOTAL COSTO', 'Total Costo', 'COSTO', 'Costos'], 0)),
+        utilidad: parseNumber(getVal(row, ['UTILIDAD', 'Utilidad', 'Profit'], 0)),
+        rentabilidad: getVal(row, ['RENTABILIDAD', 'Rentabilidad', '%', 'RENTA'], '')
+      })).sort((a, b) => parseDateSort(a.fecha) - parseDateSort(b.fecha));
+
+      els.historyCount.textContent = `${numberFormatter.format(normalized.length)} registros`;
+      toggleEmpty(els.historyEmpty, els.historyContent, normalized.length === 0);
+      if (!normalized.length) return;
+
+      renderLineChart('history', 'historyChart', {
+        labels: normalized.map(r => r.fecha),
+        datasets: [
+          { label: 'Total ingresos', data: normalized.map(r => r.ingresos), tension: .35 },
+          { label: 'Total costo', data: normalized.map(r => r.costo), tension: .35 },
+          { label: 'Utilidad', data: normalized.map(r => r.utilidad), tension: .35 }
+        ]
+      });
+
+      renderTable(els.historyTable, 'historyTableGrid', [
+        { key: 'fecha', label: 'FECHA', type: 'text' },
+        { key: 'ingresos', label: 'TOTAL INGRESOS', type: 'money' },
+        { key: 'costo', label: 'TOTAL COSTO', type: 'money' },
+        { key: 'utilidad', label: 'UTILIDAD', type: 'money' },
+        { key: 'rentabilidad', label: 'RENTABILIDAD', type: 'percent' }
+      ], normalized);
+    }
+
+    function renderLineChart(chartKey, canvasId, chartData) {
+      destroyChart(chartKey);
+      const ctx = document.getElementById(canvasId);
+      state.charts[chartKey] = new Chart(ctx, {
+        type: 'line',
+        data: chartData,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { intersect: false, mode: 'index' },
+          plugins: {
+            legend: { labels: { color: '#cbd5e1', usePointStyle: true, boxWidth: 8 } },
+            tooltip: {
+              callbacks: {
+                label: (context) => `${context.dataset.label}: ${formatMoney(context.parsed.y)}`
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { color: '#94a3b8', maxRotation: 45, minRotation: 0 }, grid: { color: 'rgba(148,163,184,.08)' } },
+            y: { ticks: { color: '#94a3b8', callback: value => compactMoney(value) }, grid: { color: 'rgba(148,163,184,.08)' } }
+          }
+        }
+      });
+    }
+
+    function destroyChart(chartKey) {
+      if (state.charts[chartKey]) {
+        state.charts[chartKey].destroy();
+        state.charts[chartKey] = null;
+      }
+    }
+
+    /**********************************************************************
+     * SEGMENTO 3: RIESGO
+     **********************************************************************/
+    function renderRisk(carteraRows, provisionRows) {
+      const carteraFields = [
+        { key: 'saldo', label: 'Saldo total', aliases: ['Suma de Saldo', 'Saldo'] },
+        { key: 'vigente', label: 'Vigente', aliases: ['Suma de Vigente', 'Vigente'] },
+        { key: 'treinta', label: '30 días', aliases: ['Suma de Treinta', 'Treinta'] },
+        { key: 'sesenta', label: '60 días', aliases: ['Suma de Sesenta', 'Sesenta'] },
+        { key: 'noventa', label: '90 días', aliases: ['Suma de Noventa', 'Noventa'] },
+        { key: 'cientoVeinte', label: '120 días', aliases: ['Suma de CientoVeinte', 'CientoVeinte', 'Ciento Veinte'] },
+        { key: 'cientoOchenta', label: '180 días', aliases: ['Suma de CientoOchenta', 'CientoOchenta', 'Ciento Ochenta'] },
+        { key: 'mayorCientoOchenta', label: '> 180 días', aliases: ['Suma de MayorCientoOchenta', 'MayorCientoOchenta', 'Mayor Ciento Ochenta'] }
+      ];
+
+      const provisionFields = [
+        { key: 'vigente', label: 'Vigente', aliases: ['Vigente'] },
+        { key: 'treinta', label: '30 días', aliases: ['Treinta'] },
+        { key: 'sesenta', label: '60 días', aliases: ['Sesenta'] },
+        { key: 'noventa', label: '90 días', aliases: ['Noventa'] }
+      ];
+
+      const carteraSummary = sumFields(carteraRows, carteraFields);
+      const provisionSummary = sumFields(provisionRows, provisionFields);
+      const carteraTotal = carteraSummary.saldo || Object.entries(carteraSummary).reduce((sum, [key, value]) => key === 'saldo' ? sum : sum + value, 0);
+      const provisionTotal = Object.values(provisionSummary).reduce((sum, value) => sum + value, 0);
+
+      els.carteraTotal.textContent = formatMoney(carteraTotal);
+      els.provisionTotal.textContent = formatMoney(provisionTotal);
+
+      toggleRiskEmpty(els.carteraEmpty, els.carteraBars, !carteraRows.length || carteraTotal === 0);
+      toggleRiskEmpty(els.provisionEmpty, els.provisionBars, !provisionRows.length || provisionTotal === 0);
+
+      if (carteraRows.length && carteraTotal !== 0) {
+        els.carteraBars.innerHTML = renderHeatBars(carteraFields, carteraSummary, carteraTotal);
+      }
+      if (provisionRows.length && provisionTotal !== 0) {
+        els.provisionBars.innerHTML = renderHeatBars(provisionFields, provisionSummary, provisionTotal);
+      }
+    }
+
+    function sumFields(rows, fields) {
+      return fields.reduce((acc, field) => {
+        acc[field.key] = rows.reduce((sum, row) => sum + parseNumber(getVal(row, field.aliases, 0)), 0);
+        return acc;
+      }, {});
+    }
+
+    function renderHeatBars(fields, summary, denominator) {
+      const maxValue = Math.max(...fields.map(f => Math.abs(summary[f.key] || 0)), 1);
+      return fields.map((field, index) => {
+        const value = summary[field.key] || 0;
+        const width = Math.max(2, Math.min(100, Math.abs(value) / maxValue * 100));
+        const percent = denominator ? (value / denominator) * 100 : 0;
+        const color = heatColor(index, fields.length);
+        return `
+          <div class="rounded-2xl border border-slate-700/70 bg-slate-950/40 p-4">
+            <div class="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <p class="font-black text-slate-100">${escapeHtml(field.label)}</p>
+                <p class="text-xs text-slate-400">${percent.toLocaleString('es-CO', { maximumFractionDigits: 1 })}% del total</p>
+              </div>
+              <p class="text-right text-sm font-black text-white">${formatMoney(value)}</p>
+            </div>
+            <div class="h-3 overflow-hidden rounded-full bg-slate-800">
+              <div class="h-full rounded-full" style="width:${width}%; background:${color}; box-shadow:0 0 22px ${color}55"></div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function heatColor(index, total) {
+      const ratio = total <= 1 ? 0 : index / (total - 1);
+      if (ratio < .18) return '#22c55e';
+      if (ratio < .38) return '#84cc16';
+      if (ratio < .58) return '#f59e0b';
+      if (ratio < .78) return '#f97316';
+      return '#ef4444';
+    }
+
+    function toggleRiskEmpty(emptyEl, contentEl, isEmpty) {
+      emptyEl.classList.toggle('hidden', !isEmpty);
+      contentEl.classList.toggle('hidden', isEmpty);
+      if (isEmpty) contentEl.innerHTML = '';
+    }
+
+    /**********************************************************************
+     * SEGMENTO 4: PERSONAL
+     **********************************************************************/
+    function renderPersonal(rows) {
+      const normalized = rows.map((row, idx) => {
+        const salary = parseNumber(getVal(row, ['Salary', 'SALARY', 'Salario', 'SUELDO', 'SALARIO'], 0));
+        const rodamiento = parseNumber(getVal(row, ['Rodamientos', 'Rodamiento', 'RODAMIENTOS', 'RODAMIENTO'], 0));
+        const auxilios = sumAuxilios(row);
+        const totalCost = salary + rodamiento + auxilios;
+        const health = getHealthInfo(row);
+        return {
+          idx,
+          source: row,
+          active: isActivePerson(row),
+          name: getVal(row, ['Nombre Completo', 'NOMBRE COMPLETO', 'Nombre', 'NOMBRE', 'Empleado', 'EMPLEADO', 'Colaborador', 'COLABORADOR', 'Full Name'], 'Sin nombre'),
+          cargo: getVal(row, ['Cargo', 'CARGO', 'Puesto', 'Perfil', 'Rol'], '—'),
+          ciudad: getVal(row, ['Ciudad', 'CIUDAD', 'City', 'Sede'], '—'),
+          salary,
+          rodamiento,
+          auxilios,
+          benefits: benefitsSummary(row),
+          totalCost,
+          hasRestriction: health.hasRestriction,
+          healthDetails: health.details
+        };
+      });
+
+      const activeRows = normalized.filter(r => r.active);
+      const totalPayroll = activeRows.reduce((sum, row) => sum + row.totalCost, 0);
+      els.peopleKpi.textContent = numberFormatter.format(activeRows.length);
+      els.payrollKpi.textContent = compactMoney(totalPayroll);
+
+      togglePersonalEmpty(normalized.length === 0);
+      if (!normalized.length) return;
+
+      const tableRows = normalized.map(person => `
+        <tr class="border-b border-slate-800/90 hover:bg-slate-800/40">
+          <td class="min-w-[300px] px-4 py-3 align-top">
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="font-black text-slate-100">${escapeHtml(person.name)}</span>
+                ${person.hasRestriction ? '<span class="rounded-full bg-rose-400/15 px-2.5 py-1 text-[11px] font-black text-rose-200">Restricción Médica / SST</span>' : ''}
+                ${person.active ? '<span class="rounded-full bg-emerald-400/10 px-2.5 py-1 text-[11px] font-bold text-emerald-200">Activo</span>' : '<span class="rounded-full bg-slate-700/60 px-2.5 py-1 text-[11px] font-bold text-slate-300">No activo / sin estado</span>'}
+              </div>
+              ${person.hasRestriction ? `<button type="button" data-health-target="health-${person.idx}" class="w-fit rounded-xl border border-rose-400/25 bg-rose-400/10 px-3 py-1.5 text-xs font-bold text-rose-100 transition hover:bg-rose-400/20">Ver detalle SST</button>` : ''}
+            </div>
+          </td>
+          <td class="px-4 py-3 text-slate-300">${escapeHtml(person.cargo)}</td>
+          <td class="px-4 py-3 text-slate-300">${escapeHtml(person.ciudad)}</td>
+          <td class="px-4 py-3 text-right font-semibold text-slate-100">${formatMoney(person.salary)}</td>
+          <td class="px-4 py-3 text-right font-semibold text-slate-100">${formatMoney(person.rodamiento)}</td>
+          <td class="min-w-[220px] px-4 py-3 text-slate-300">${escapeHtml(person.benefits || '—')}</td>
+          <td class="px-4 py-3 text-right font-black text-white">${formatMoney(person.totalCost)}</td>
+        </tr>
+        ${person.hasRestriction ? `
+          <tr id="health-${person.idx}" class="hidden border-b border-slate-800/90 bg-rose-950/20">
+            <td colspan="7" class="px-4 py-4">
+              <div class="rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4">
+                <p class="mb-2 text-sm font-black text-rose-100">Detalle de Restricción Médica / SST</p>
+                <div class="grid gap-3 md:grid-cols-2">
+                  ${person.healthDetails.map(item => `
+                    <div class="rounded-xl bg-slate-950/35 p-3">
+                      <p class="text-[11px] font-bold uppercase tracking-[.16em] text-rose-200/80">${escapeHtml(item.label)}</p>
+                      <p class="mt-1 text-sm text-slate-100">${escapeHtml(item.value)}</p>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            </td>
+          </tr>` : ''}
+      `).join('');
+
+      els.personalTable.innerHTML = `
+        <table class="min-w-full overflow-hidden rounded-2xl text-sm">
+          <thead class="bg-slate-950/70 text-left text-xs uppercase tracking-[.14em] text-slate-400">
+            <tr>
+              <th class="px-4 py-3">Nombre Completo</th>
+              <th class="px-4 py-3">Cargo</th>
+              <th class="px-4 py-3">Ciudad</th>
+              <th class="px-4 py-3 text-right">Salary</th>
+              <th class="px-4 py-3 text-right">Rodamientos</th>
+              <th class="px-4 py-3">Beneficios / Auxilios</th>
+              <th class="px-4 py-3 text-right">Costo total</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>`;
+    }
+
+    function isActivePerson(row) {
+      const status = normalize(getVal(row, ['Estado', 'ESTADO', 'Status', 'Activo', 'ACTIVO', 'Estado Empleado'], ''));
+      if (!status) return true;
+      if (['INACTIVO', 'RETIRADO', 'TERMINADO', 'FINALIZADO', 'CANCELADO', 'NO ACTIVO', 'BAJA'].some(x => status.includes(x))) return false;
+      return true;
+    }
+
+    function sumAuxilios(row) {
+      let total = 0;
+      for (const [key, value] of Object.entries(row)) {
+        const nKey = normalize(key);
+        if (nKey.includes('AUXIL') || nKey.includes('BENEFICIO')) {
+          total += parseNumber(value);
+        }
+      }
+      return total;
+    }
+
+    function benefitsSummary(row) {
+      const parts = [];
+      for (const [key, value] of Object.entries(row)) {
+        const nKey = normalize(key);
+        if ((nKey.includes('AUXIL') || nKey.includes('BENEFICIO')) && isMeaningful(value)) {
+          const money = parseNumber(value);
+          parts.push(`${key}: ${money ? formatMoney(money) : value}`);
+        }
+      }
+      return parts.join(' · ');
+    }
+
+    function getHealthInfo(row) {
+      const fields = [
+        { label: 'Condición Especial', aliases: ['Condicion Especial', 'Condición Especial', 'CONDICION ESPECIAL'] },
+        { label: 'Condición de discapacidad', aliases: ['Condición de discapacidad', 'Condicion de discapacidad', 'Discapacidad'] },
+        { label: 'Descripción de Recomendación médica', aliases: ['Descripción de Recomendación médica', 'Descripcion de Recomendacion medica', 'Recomendación médica', 'Recomendacion medica'] },
+        { label: 'Seguimiento administrativo del estado del caso', aliases: ['Seguimiento administrativo del estado del caso', 'Seguimiento administrativo', 'Estado del caso'] }
+      ];
+      const details = fields
+        .map(field => ({ label: field.label, value: getVal(row, field.aliases, '') }))
+        .filter(item => isMeaningful(item.value));
+      return { hasRestriction: details.length > 0, details };
+    }
+
+    function togglePersonalEmpty(isEmpty) {
+      els.personalEmpty.classList.toggle('hidden', !isEmpty);
+      els.personalTable.classList.toggle('hidden', isEmpty);
+      if (isEmpty) els.personalTable.innerHTML = '';
+    }
+
+    /**********************************************************************
+     * TABLAS ORDENABLES
+     **********************************************************************/
+    function renderTable(container, tableId, columns, rows) {
+      const stateKey = tableId;
+      const sortState = state.sortState.get(stateKey) || { key: columns[0]?.key, dir: 'asc' };
+      const sortedRows = [...rows].sort((a, b) => sortCompare(a[sortState.key], b[sortState.key], sortState.dir));
+
+      container.innerHTML = `
+        <table id="${tableId}" class="min-w-full overflow-hidden rounded-2xl text-sm">
+          <thead class="bg-slate-950/70 text-left text-xs uppercase tracking-[.14em] text-slate-400">
+            <tr>
+              ${columns.map(col => `
+                <th data-key="${col.key}" data-sort-dir="${sortState.key === col.key ? sortState.dir : ''}"
+                  class="sort-indicator cursor-pointer select-none px-4 py-3 ${col.type === 'money' || col.type === 'percent' ? 'text-right' : ''}">
+                  ${escapeHtml(col.label)}
+                </th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${sortedRows.map(row => `
+              <tr class="border-b border-slate-800/90 hover:bg-slate-800/40">
+                ${columns.map(col => `
+                  <td class="px-4 py-3 ${col.type === 'money' || col.type === 'percent' ? 'text-right font-semibold text-slate-100' : 'text-slate-300'}">
+                    ${formatCell(row[col.key], col.type)}
+                  </td>`).join('')}
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+
+      container.querySelectorAll('th[data-key]').forEach(th => {
+        th.addEventListener('click', () => {
+          const key = th.dataset.key;
+          const current = state.sortState.get(stateKey) || {};
+          const dir = current.key === key && current.dir === 'asc' ? 'desc' : 'asc';
+          state.sortState.set(stateKey, { key, dir });
+          renderTable(container, tableId, columns, rows);
+        });
+      });
+    }
+
+    function sortCompare(a, b, dir) {
+      const na = parseNumber(a);
+      const nb = parseNumber(b);
+      const aIsNum = !isBlank(a) && Number.isFinite(na) && String(a).match(/[0-9]/);
+      const bIsNum = !isBlank(b) && Number.isFinite(nb) && String(b).match(/[0-9]/);
+      let result;
+      if (aIsNum && bIsNum) result = na - nb;
+      else result = String(a ?? '').localeCompare(String(b ?? ''), 'es', { numeric: true, sensitivity: 'base' });
+      return dir === 'desc' ? -result : result;
+    }
+
+    function formatCell(value, type) {
+      if (type === 'money') return escapeHtml(formatMoney(value));
+      if (type === 'percent') return escapeHtml(formatPercent(value));
+      return escapeHtml(value || '—');
+    }
+
+    function toggleEmpty(emptyEl, contentEl, isEmpty) {
+      emptyEl.classList.toggle('hidden', !isEmpty);
+      contentEl.classList.toggle('hidden', isEmpty);
+    }
+
+    /**********************************************************************
+     * EVENTOS
+     **********************************************************************/
+    els.search.addEventListener('input', (event) => renderSuggestions(event.target.value));
+
+    els.search.addEventListener('keydown', (event) => {
+      const items = [...document.querySelectorAll('.suggestion-item')];
+      if (!items.length) return;
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setActiveSuggestion(state.activeSuggestion + 1);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setActiveSuggestion(state.activeSuggestion - 1);
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        const item = items[state.activeSuggestion >= 0 ? state.activeSuggestion : 0];
+        item?.click();
+      } else if (event.key === 'Escape') {
+        els.suggestions.classList.add('hidden');
+      }
+    });
+
+    els.suggestions.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-idx]');
+      if (!btn) return;
+      const row = state.distribution[Number(btn.dataset.idx)];
+      if (row) selectProject(row);
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('#suggestions') && !event.target.closest('#projectSearch')) {
+        els.suggestions.classList.add('hidden');
+      }
+      const healthBtn = event.target.closest('[data-health-target]');
+      if (healthBtn) {
+        const target = document.getElementById(healthBtn.dataset.healthTarget);
+        if (target) {
+          target.classList.toggle('hidden');
+          healthBtn.textContent = target.classList.contains('hidden') ? 'Ver detalle SST' : 'Ocultar detalle SST';
+        }
+      }
+    });
+
+    els.refreshBtn.addEventListener('click', async () => {
+      await loadDistribution();
+      if (state.selectedProject) {
+        const refreshed = state.distribution.find(row => normalize(getDistributionSummary(row).id) === normalize(state.selectedProject.id));
+        if (refreshed) await selectProject(refreshed);
+      }
+    });
+
+    window.addEventListener('DOMContentLoaded', loadDistribution);
+  </script>
+</body>
+</html>
