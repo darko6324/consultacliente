@@ -888,12 +888,13 @@
       toggleEmpty(els.financeEmpty, els.financeContent, monthlyRows.length === 0);
       if (!monthlyRows.length) return;
 
+      const chartRows = [...monthlyRows].sort((a, b) => a.sortKey - b.sortKey);
       renderLineChart('finance', 'financeChart', {
-        labels: monthlyRows.map(r => r.mes),
+        labels: chartRows.map(r => r.mes),
         datasets: [
-          { label: 'Ingreso', data: monthlyRows.map(r => r.ingreso), tension: .35 },
-          { label: 'Costo', data: monthlyRows.map(r => r.costo), tension: .35 },
-          { label: 'Utilidad', data: monthlyRows.map(r => r.utilidad), tension: .35 }
+          { label: 'Ingreso', data: chartRows.map(r => r.ingreso), tension: .35 },
+          { label: 'Costo', data: chartRows.map(r => r.costo), tension: .35 },
+          { label: 'Utilidad', data: chartRows.map(r => r.utilidad), tension: .35 }
         ]
       });
 
@@ -956,12 +957,13 @@
         return;
       }
 
+      const chartRows = [...monthlyRows].sort((a, b) => a.sortKey - b.sortKey);
       renderLineChart('history', 'historyChart', {
-        labels: monthlyRows.map(r => r.fecha),
+        labels: chartRows.map(r => r.fecha),
         datasets: [
-          { label: 'Total ingresos', data: monthlyRows.map(r => r.ingresos), tension: .35 },
-          { label: 'Total costo', data: monthlyRows.map(r => r.costo), tension: .35 },
-          { label: 'Utilidad', data: monthlyRows.map(r => r.utilidad), tension: .35 }
+          { label: 'Total ingresos', data: chartRows.map(r => r.ingresos), tension: .35 },
+          { label: 'Total costo', data: chartRows.map(r => r.costo), tension: .35 },
+          { label: 'Utilidad', data: chartRows.map(r => r.utilidad), tension: .35 }
         ]
       });
 
