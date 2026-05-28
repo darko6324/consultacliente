@@ -662,16 +662,27 @@
       });
     }
 
-    function findProjectMatches(rows, selected, aliasList) {
-      const projectId = normalize(selected.id);
-      const projectName = normalize(selected.name);
+    function sameProjectId(value, selectedId) {
+      const left = String(value ?? '').trim();
+      const right = String(selectedId ?? '').trim();
+      if (!left || !right) return false;
+
+      if (normalize(left) === normalize(right)) return true;
+
+      const leftNumber = parseNumber(left);
+      const rightNumber = parseNumber(right);
+      if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== 0 && rightNumber !== 0) {
+        return leftNumber === rightNumber;
+      }
+
+      return false;
+    }
+
+    function findProjectMatches(rows, selected, idAliases) {
       return rows.filter(row => {
-        const primary = normalize(getVal(row, aliasList, ''));
-        const joined = normalize(Object.values(row).join(' '));
-        if (!primary && !joined) return false;
-        return primary === projectId || primary.includes(projectId) ||
-               (projectName && primary === projectName) || (projectName && primary.includes(projectName)) ||
-               joined.includes(projectId);
+        const key = getFirstExistingKey(row, idAliases);
+        if (!key) return false;
+        return sameProjectId(row[key], selected.id);
       });
     }
 
@@ -797,7 +808,7 @@
       const normalized = rows.map(row => {
         const mesRaw = getVal(row, ['MES', 'Mes', 'FECHA', 'Fecha'], '—');
         return {
-          mes: mesRaw,
+          mes: formatMonthYear(mesRaw),
           sortKey: parseDateSort(mesRaw),
           ingreso: parseNumber(getVal(row, ['INGRESO', 'Ingresos', 'TOTAL INGRESOS', 'Total Ingresos'], 0)),
           costo: parseNumber(getVal(row, ['COSTO', 'Costos', 'TOTAL COSTO', 'Total Costo'], 0)),
@@ -806,16 +817,17 @@
         };
       }).sort((a, b) => a.sortKey - b.sortKey);
 
-      els.financeCount.textContent = `${numberFormatter.format(normalized.length)} registros`;
-      toggleEmpty(els.financeEmpty, els.financeContent, normalized.length === 0);
-      if (!normalized.length) return;
+      const monthlyRows = aggregateByPeriod(normalized, 'mes');
+      els.financeCount.textContent = `${numberFormatter.format(monthlyRows.length)} periodos`;
+      toggleEmpty(els.financeEmpty, els.financeContent, monthlyRows.length === 0);
+      if (!monthlyRows.length) return;
 
       renderLineChart('finance', 'financeChart', {
-        labels: normalized.map(r => r.mes),
+        labels: monthlyRows.map(r => r.mes),
         datasets: [
-          { label: 'Ingreso', data: normalized.map(r => r.ingreso), tension: .35 },
-          { label: 'Costo', data: normalized.map(r => r.costo), tension: .35 },
-          { label: 'Utilidad', data: normalized.map(r => r.utilidad), tension: .35 }
+          { label: 'Ingreso', data: monthlyRows.map(r => r.ingreso), tension: .35 },
+          { label: 'Costo', data: monthlyRows.map(r => r.costo), tension: .35 },
+          { label: 'Utilidad', data: monthlyRows.map(r => r.utilidad), tension: .35 }
         ]
       });
 
@@ -825,7 +837,7 @@
         { key: 'costo', label: 'COSTO', type: 'money' },
         { key: 'rentabilidad', label: '% Rentabilidad', type: 'percent' },
         { key: 'utilidad', label: 'UTILIDAD', type: 'money' }
-      ], normalized);
+      ], monthlyRows);
     }
 
     /**********************************************************************
@@ -844,16 +856,17 @@
         };
       }).sort((a, b) => a.sortKey - b.sortKey);
 
-      els.historyCount.textContent = `${numberFormatter.format(normalized.length)} registros`;
-      toggleEmpty(els.historyEmpty, els.historyContent, normalized.length === 0);
-      if (!normalized.length) return;
+      const monthlyRows = aggregateByPeriod(normalized, 'fecha');
+      els.historyCount.textContent = `${numberFormatter.format(monthlyRows.length)} periodos`;
+      toggleEmpty(els.historyEmpty, els.historyContent, monthlyRows.length === 0);
+      if (!monthlyRows.length) return;
 
       renderLineChart('history', 'historyChart', {
-        labels: normalized.map(r => r.fecha),
+        labels: monthlyRows.map(r => r.fecha),
         datasets: [
-          { label: 'Total ingresos', data: normalized.map(r => r.ingresos), tension: .35 },
-          { label: 'Total costo', data: normalized.map(r => r.costo), tension: .35 },
-          { label: 'Utilidad', data: normalized.map(r => r.utilidad), tension: .35 }
+          { label: 'Total ingresos', data: monthlyRows.map(r => r.ingresos), tension: .35 },
+          { label: 'Total costo', data: monthlyRows.map(r => r.costo), tension: .35 },
+          { label: 'Utilidad', data: monthlyRows.map(r => r.utilidad), tension: .35 }
         ]
       });
 
@@ -863,7 +876,7 @@
         { key: 'costo', label: 'TOTAL COSTO', type: 'money' },
         { key: 'utilidad', label: 'UTILIDAD', type: 'money' },
         { key: 'rentabilidad', label: 'RENTABILIDAD', type: 'percent' }
-      ], normalized);
+      ], monthlyRows);
     }
 
     function renderLineChart(chartKey, canvasId, chartData) {
@@ -897,6 +910,44 @@
         state.charts[chartKey].destroy();
         state.charts[chartKey] = null;
       }
+    }
+
+
+    function aggregateByPeriod(rows, labelKey) {
+      const groups = new Map();
+      for (const row of rows) {
+        const label = row[labelKey] || '—';
+        const key = normalize(label);
+        const existing = groups.get(key) || {
+          ...row,
+          [labelKey]: label,
+          ingreso: 0,
+          ingresos: 0,
+          costo: 0,
+          utilidad: 0,
+          _rentabilidadValues: [],
+          _count: 0
+        };
+
+        if ('ingreso' in row) existing.ingreso += parseNumber(row.ingreso);
+        if ('ingresos' in row) existing.ingresos += parseNumber(row.ingresos);
+        existing.costo += parseNumber(row.costo);
+        existing.utilidad += parseNumber(row.utilidad);
+        existing.sortKey = Math.min(existing.sortKey || row.sortKey || 0, row.sortKey || 0);
+
+        const r = parsePercent(row.rentabilidad);
+        if (r !== null) existing._rentabilidadValues.push(r);
+        existing._count += 1;
+        groups.set(key, existing);
+      }
+
+      return [...groups.values()].map(row => {
+        const revenue = parseNumber(row.ingreso) || parseNumber(row.ingresos);
+        row.rentabilidad = revenue ? (row.utilidad / revenue) * 100 : (row._rentabilidadValues[0] ?? null);
+        delete row._rentabilidadValues;
+        delete row._count;
+        return row;
+      }).sort((a, b) => a.sortKey - b.sortKey);
     }
 
     /**********************************************************************
